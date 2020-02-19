@@ -1,0 +1,133 @@
+\documentclass{article}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+<<InstallingLibraries>>=
+
+library(areal)
+library(dplyr)   # data wrangling
+library(sf) 
+library(rgdal)
+library(lwgeom)
+library(readr)
+library(curl)
+library(ggplot2)
+@
+
+<<ValidatingArealInterpolation>>=
+###Aggregating population density by zipcode from population density by county
+congressDistrictShapeFile <-sf::st_read("/Users/mugdhachowdary/Downloads/C2012", layer = "C2012")
+congressDistrict <- select(congressDistrictShapeFile, ID, AREA,DISTRICT)
+zipcodeShapeFile <- sf::st_read("/Users/mugdhachowdary/Downloads/tl_2010_27_zcta510",  layer = "tl_2010_27_zcta510")
+
+nzipcodeShapeFile <- sf::st_read("/Users/mugdhachowdary/Downloads/shp_bdry_zip_code_tabulation_areas",  layer = "zip_code_tabulation_areas")
+zipcodeShapeFile <- zipcodeShapeFile[order(zipcodeShapeFile$ZCTA5CE10),]
+zipcode <- select(zipcodeShapeFile,STATEFP10, ZCTA5CE10,GEOID10 )
+congressDistrictPopulation <- DEC_10_SF1_P1_with_ann_CD
+colnames(congressDistrict)[3] <- "CONGRESSDIST"
+
+congressDistrictPopulation$CONGRESSDIST <- congressDistrict$CONGRESSDIST
+popByCongress <- dplyr::left_join(congressDistrict, congressDistrictPopulation, by="CONGRESSDIST")
+colnames(popByCongress)[5] <- "POPULATION"
+zipcodeShape<- st_transform(zipcode, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+nPopByCongress<-st_transform(popByCongress, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+ar_validate(source=nPopByCongress, target=zipcodeShape, varList = "DENSITY", method="aw", verbose=TRUE)
+result <- aw_interpolate(zipcodeShape, tid="ZCTA5CE10", source = nPopByCongress, sid=CONGRESSDIST, weight = "sum", output = "sf", intensive = "DENSITY")
+resultST <- sf::st_interpolate_aw(nPopByCongress["DENSITY"], zipcodeShape["ZCTA5CE10"], extensive=FALSE)
+
+###Aggregating population density by county  from population density by zipcode
+
+zipcodePopulation <- DEC_10_SF1_P1_with_ann
+zipcode <- select(nzipcodeShapeFile, "ZCTA5CE10" , "Shape_Area")
+zipcodeN <- zipcode[order(zipcode$ZCTA5CE10),] 
+colnames(zipcodeN)[1] <- "ZCTA"
+zipcodePopulation$ZCTA <- zipcodeN$ZCTA
+congressDist <- select(nPopByCongress, "ID",           "AREA",         "CONGRESSDIST")
+popByZipcode <- dplyr::left_join(zipcodeN,zipcodePopulation,  by="ZCTA")
+popByZipcode["AreaSQMILE"] <- popByZipcode$Shape_Area * (3.861/10000000)
+popByZipcode["DENSITY"] <- popByZipcode$POPULATION/popByZipcode$AreaSQMILE
+
+npopByZipcode <- st_transform(popByZipcode, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+ar_validate(source=npopByZipcode, target=congressDist, varList = "POPULATION", method="aw", verbose=TRUE)
+resultOPP <- aw_interpolate(congressDist, tid= "CONGRESSDIST", source = npopByZipcode, sid="ZCTA", weight = "sum", output = "sf", intensive = "DENSITY")
+resultSTOPP <- sf::st_interpolate_aw(npopByZipcode["DENSITY"], congressDist["CONGRESSDIST"], extensive=FALSE)
+
+
+#### Difference between the densities
+
+##zipcode
+zpresidual <- npopByZipcode$DENSITY - result$DENSITY
+zpSTresidual <- npopByZipcode$DENSITY - resultST$DENSITY
+zpWIresidual <- result$DENSITY - resultST$DENSITY
+paste("The mean difference between actual density and areal interpolation is: ", mean(zpresidual))
+paste("The mean difference between actual density and st areal interpolation is: ", mean(zpSTresidual))
+paste("The mean difference between areal interpolation and st areal interpolation is: ", mean(zpWIresidual))
+
+##CongressionalDistricts
+cdresidual <- nPopByCongress$DENSITY - resultOPP$DENSITY
+cdSTresidual <- nPopByCongress$DENSITY - resultSTOPP$DENSITY
+cdWIresidual <- resultOPP$DENSITY - resultSTOPP$DENSITY
+paste("The mean difference between actual density and areal interpolation is: ", mean(cdresidual))
+paste("The mean difference between actual density and st areal interpolation is: ", mean(cdSTresidual))
+paste("The mean difference between areal interpolation and st areal interpolation is: ", mean(cdWIresidual))
+@
+
+
+<<Exploring MAUP using Flint water data with areal interpolation>>=
+###Importing flint city shape file
+city_shapefile <-sf::st_read("/Users/mugdhachowdary/Downloads/Cities_v17a", layer =  "Cities_v17a")
+FlintCity <- city_shapefile %>% filter(NAME == "Flint")
+flint<- st_transform(FlintCity, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+
+###Importing Michigan zipcodes
+zipcode <- sf::st_read("/Users/mugdhachowdary/Downloads/cb_2015_us_zcta510_500k/cb_2015_us_zcta510_500k.shp",layer="cb_2015_us_zcta510_500k")
+zipcode<-st_transform(zipcode, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+#Sort out the zipcode around flint river area 
+zip <- c('48501','48502', '48503', '48504','48505', '48506', '48507','48509')
+FlintZP <- zipcode %>% subset(ZCTA5CE10 %in% zip)
+FlintZP[is.na(FlintZP)] <- 0
+plot(FlintZP)
+###Importing BLL data
+
+BLL <- read_csv(curl("https://raw.githubusercontent.com/AmeliaMN/BLL/master/2015/BLL_under6_zip_2015.csv"), na = c("NA", " ", "**"))
+
+colnames(BLL)[1] <- "ZCTA5CE10" 
+BLL$ZCTA5CE10 <- as.factor(BLL$ZCTA5CE10)
+zip <- c('48501','48502', '48503', '48504','48505', '48506', '48507','48509')
+BLLflint <- BLL %>% subset(ZCTA5CE10 %in% zip)
+BLLflint[is.na(BLLflint)] <- 0
+
+
+BLLZIPCODE <- dplyr::left_join(BLLflint,FlintZP,  by ='ZCTA5CE10')
+BLLZIPCODE <- st_as_sf(BLLZIPCODE)
+BLLZIPCODE <- st_transform(BLLZIPCODE, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+SFBLLZIPCODE <- st_as_sf(BLLZIPCODE)
+SFBLLZIPCODE <- st_transform(SFBLLZIPCODE, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+SFFLINTZP <- st_as_sf(FlintZP)
+SFFLINTZP <- st_transform(SFFLINTZP, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+
+zipcodeGrid <- st_make_grid(SFFLINTZP, cellsize = 500, square=FALSE, offset = c(0, .05 / (sqrt(3)/2)))
+zipcodeGrid  <- st_transform(zipcodeGrid , crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+
+ar_validate(source=BLLZIPCODE , target=st_as_sf(zipcodeGrid), varList = "any_samples_percent", method="aw", verbose=TRUE)
+sfZipcodeGrid <- st_as_sf(zipcodeGrid)
+finalResult <- aw_interpolate(sfZipcodeGrid, tid="x", source = BLLZIPCODE, sid="ZCTA5CE10", weight = "sum", output = "sf", intensive = "any_samples_percent")
+sfFLINT <- st_as_sf(flint)
+sfFLINT <- st_transform(sfFLINT, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
+
+
+plot(st_as_sf(zipcodeGrid) )
+plot(SFBLLZIPCODE, add=TRUE)
+plot(sfFLINT, add=TRUE)
+plot(sfFLint)
+plot(zipcodeGrid )
+plot(sfFLint, add=TRUE)
+
+@
+
+
+<<Exploring MAUP using Flint water data with Krigging Interpolation>>=
+
+
+@

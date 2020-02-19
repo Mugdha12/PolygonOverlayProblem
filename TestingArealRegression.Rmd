@@ -1,0 +1,66 @@
+---
+title: "TestingArealRegression"
+author: "Mugdha Danda"
+date: "11/23/2019"
+output: html_document
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(areal)
+library(dplyr)
+library(sf)
+data(ar_stl_asthma, package = "areal")
+data(ar_stl_race, package = "areal")
+data(ar_stl_wards, package = "areal")
+```
+
+
+
+```{r}
+
+asthma <- ar_stl_asthma
+wards <- ar_stl_wards
+race <- ar_stl_race
+asthmaTbl <- ar_stl_asthma
+st_geometry(asthmaTbl) <- NULL
+race83 <- st_transform(race, crs = 4269)
+
+```
+
+```{r validate-simple}
+ar_validate(source = asthma, target = wards, varList = "ASTHMA")
+```
+
+```{r validate-verbose}
+ar_validate(source = asthma, target = wards, varList = "ASTHMA", method = "aw", verbose = TRUE)
+```
+```{r}
+hold <- aw_interpolate(wards, tid=WARD, source = asthma, sid=GEOID, weight = "total", output = "sf", extensive = "ASTHMA")
+holdST <- st_interpolate_aw(asthma, wards, extensive = TRUE)
+```
+
+
+```{r validate-simple}
+newASTHMA <- select(asthma, -ASTHMA)
+ar_validate(source = hold, target = newASTHMA, varList = "ASTHMA")
+holdNew <- aw_interpolate(newASTHMA, tid=GEOID, source = hold, sid=WARD, weight = "total", output = "sf", extensive = "ASTHMA")
+
+residuals <- asthma$ASTHMA - holdNew$ASTHMA
+plot(residuals)
+```
+
+```{r}
+stl_tracts <- tigris::tracts(state = 29, county = 510, class = "sf")
+
+tract_data <- dplyr::left_join(stl_tracts, asthmaTbl, by = "GEOID")
+ar_validate(source = race83, target = wards, varList = "TOTAL_E", method = "aw", verbose = TRUE)
+raceFixed <- st_transform(race83, crs = 26915)
+plot(tract_data)
+hold <- aw_interpolate(ar_stl_wards, tid = WARD, source = ar_stl_race, sid = "GEOID", weight = "sum", output = "sf", extensive = "TOTAL_E")
+plot(hold)
+
+```
+

@@ -1,0 +1,107 @@
+---
+title: "Exploring MAUP using Flint Water Data"
+author: "Mugdha Danda"
+date: "11/23/2019"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+require(rgeos)
+require(pycno)
+require(sp)
+require(dplyr)
+require(rgdal)
+require(stringr)
+require(ggplot2)
+require(RColorBrewer)
+require(readr)
+library(areal)
+library(dplyr)
+library(sf)
+library(mss)
+library(gstat)
+```
+
+```{r}
+#Import cities' shapefile 
+city_shapefile <- sf::st_read("/Users/mugdhachowdary/Downloads/Cities_v17a", layer =  "Cities_v17a")
+
+#plot the city 
+#plot(city_shapefile)
+#transform the cities shapfile 
+cities <- st_transform(city_shapefile, CRS("+proj=longlat +datum=WGS84"))
+#city_shapefile_flint@data  <- city_shapefile@data %>%
+ # filter(NAME == "Flint") 
+#city_shape <-readOGR("/Users/mugdhachowdary/Downloads/Cities_v17a", layer =  "Cities_v17a")
+city_shapefile %>% filter(NAME == "Flint") 
+
+
+#filter flint city 
+fipscode = c("29000")
+flint <- filter(city_shapefile, FIPSCODE == fipscode, NAME == "Flint")
+
+#transform the sp data frame of flint to a df dataframe 
+#flint.points = fortify(flint, region="NAME")
+#flint.df = inner_join(flint.points, flint@data, by=c("id"="NAME"))
+#change the na values in flint df to 0 
+#flint.df[is.na(flint.df)] <- 0
+flint[is.na(flint)] <- 0
+
+#plot flint city 
+plot(flint)
+
+```
+
+```{r}
+#import relevant pacakges 
+library(readr)
+library(dplyr)
+library(curl)
+# install.packages("rgdal")
+library(rgdal)
+```
+
+
+#MichiganData
+```{r}
+#import zipcode of Michigan 
+zipcode <- sf::st_read("/Users/mugdhachowdary/Downloads/cb_2015_us_zcta510_500k/cb_2015_us_zcta510_500k.shp",layer="cb_2015_us_zcta510_500k")
+Mzipcode <- st_transform(zipcode, CRS("+proj=longlat +datum=WGS84"))
+#Sort out the zipcode around flint river area 
+zip <- c( '48502', '48503', '48504','48505', '48506', '48507', '48532','48551','48553' )
+#filter out these specific zipcode 
+NEzipcode <- Mzipcode %>% subset(ZCTA5CE10 %in% zip)
+```
+
+#import BLL data 
+```{r}
+BLL <- read_csv(curl("https://raw.githubusercontent.com/AmeliaMN/BLL/master/2015/BLL_under6_zip_2015.csv"), na = c("NA", " ", "**"))
+#we rename the Zip-Code so that we joined it with the data of "mydata" later.
+BLL$any_samples_n[is.na(BLL$any_samples_n)] <- 0
+BLL$any_samples_percent[is.na(BLL$any_samples_percent)] <- 0
+
+BLL <- BLL %>%
+   rename(ZCTA5CE10 = Zip_Code)
+#transform the zipcode into factors 
+BLL$ZCTA5CE10 = as.factor(BLL$ZCTA5CE10)
+#View the data frame 
+#View(BLL)
+#filter out the BLL data based on the zipcode 
+BLL_flint <- BLL %>%
+  filter(ZCTA5CE10=='48502'|ZCTA5CE10=='48503'|ZCTA5CE10== '48504'|ZCTA5CE10=='48505'|ZCTA5CE10=='48506'|ZCTA5CE10== '48507'| ZCTA5CE10=='48532'|ZCTA5CE10=='48551'|ZCTA5CE10=='48553')
+BLL_zipcode <- Mzipcode %>% subset(ZCTA5CE10 %in% zip)
+BLL_zipcode <- left_join(BLL_zipcode, BLL_flint, by ='ZCTA5CE10') 
+BLL_zipcode$id = rownames(BLL_zipcode)
+
+BLL_zipcode.points = fortify(BLL_zipcode, region="id")
+BLL_zipcode.df = st_join(BLL_zipcode.points, BLL_zipcode, by="id")
+#anySamples <- BLL_flint %>%select(any_samples_percent)
+ar_validate(source = BLL_zipcode.df, target = "any_samples_percent", varList = "Pop_under_age_six", method = "aw", verbose = TRUE)
+aw_interpolate(BLL_flint, tid = , source = BLL_flint$ZCTA5CE10, sid = "GEOID", weight = "sum", output = "sf", extensive = "TOTAL_E")
+
+### Join this to the zipcode shape file
+```
