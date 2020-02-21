@@ -17,14 +17,14 @@ library(ggplot2)
 
 <<ValidatingArealInterpolation>>=
 ###Aggregating population density by zipcode from population density by county
-congressDistrictShapeFile <-sf::st_read("/Users/mugdhachowdary/Downloads/C2012", layer = "C2012")
+congressDistrictShapeFile <-sf::st_read("/Data/C2012", layer = "C2012")
 congressDistrict <- select(congressDistrictShapeFile, ID, AREA,DISTRICT)
-zipcodeShapeFile <- sf::st_read("/Users/mugdhachowdary/Downloads/tl_2010_27_zcta510",  layer = "tl_2010_27_zcta510")
+zipcodeShapeFile <- sf::st_read("/Data/tl_2010_27_zcta510",  layer = "tl_2010_27_zcta510")
 
-nzipcodeShapeFile <- sf::st_read("/Users/mugdhachowdary/Downloads/shp_bdry_zip_code_tabulation_areas",  layer = "zip_code_tabulation_areas")
+nzipcodeShapeFile <- sf::st_read("/Data/shp_bdry_zip_code_tabulation_areas",  layer = "zip_code_tabulation_areas")
 zipcodeShapeFile <- zipcodeShapeFile[order(zipcodeShapeFile$ZCTA5CE10),]
 zipcode <- select(zipcodeShapeFile,STATEFP10, ZCTA5CE10,GEOID10 )
-congressDistrictPopulation <- DEC_10_SF1_P1_with_ann_CD
+congressDistrictPopulation <- read_csv("Downloads/DEC_10_SF1_P1/DEC_10_SF1_P1_with_ann_CD.csv")
 colnames(congressDistrict)[3] <- "CONGRESSDIST"
 
 congressDistrictPopulation$CONGRESSDIST <- congressDistrict$CONGRESSDIST
@@ -38,7 +38,7 @@ resultST <- sf::st_interpolate_aw(nPopByCongress["DENSITY"], zipcodeShape["ZCTA5
 
 ###Aggregating population density by county  from population density by zipcode
 
-zipcodePopulation <- DEC_10_SF1_P1_with_ann
+zipcodePopulation <- read_csv("Data/DEC_10_SF1_P1/DEC_10_SF1_P1_with_ann.csv")
 zipcode <- select(nzipcodeShapeFile, "ZCTA5CE10" , "Shape_Area")
 zipcodeN <- zipcode[order(zipcode$ZCTA5CE10),] 
 colnames(zipcodeN)[1] <- "ZCTA"
@@ -76,12 +76,12 @@ paste("The mean difference between areal interpolation and st areal interpolatio
 
 <<Exploring MAUP using Flint water data with areal interpolation>>=
 ###Importing flint city shape file
-city_shapefile <-sf::st_read("/Users/mugdhachowdary/Downloads/Cities_v17a", layer =  "Cities_v17a")
+city_shapefile <-sf::st_read("/Data/Cities_v17a", layer =  "Cities_v17a")
 FlintCity <- city_shapefile %>% filter(NAME == "Flint")
 flint<- st_transform(FlintCity, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
 
 ###Importing Michigan zipcodes
-zipcode <- sf::st_read("/Users/mugdhachowdary/Downloads/cb_2015_us_zcta510_500k/cb_2015_us_zcta510_500k.shp",layer="cb_2015_us_zcta510_500k")
+zipcode <- sf::st_read("/Data/cb_2015_us_zcta510_500k",layer="cb_2015_us_zcta510_500k")
 zipcode<-st_transform(zipcode, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
 #Sort out the zipcode around flint river area 
 zip <- c('48501','48502', '48503', '48504','48505', '48506', '48507','48509')
@@ -117,7 +117,7 @@ sfFLINT <- st_as_sf(flint)
 sfFLINT <- st_transform(sfFLINT, crs = 26915, proj4string = "+proj=longlat +datum=WGS84")
 
 
-plot(st_as_sf(zipcodeGrid) )
+plot((zipcodeGrid) )
 plot(SFBLLZIPCODE, add=TRUE)
 plot(sfFLINT, add=TRUE)
 plot(sfFLint)
